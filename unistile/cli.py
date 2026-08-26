@@ -5,6 +5,7 @@
   unistile ingest                      校验 → 归一化 → Catalog → Provider bind
   unistile providers                   列出已注册 Provider 及其能力声明
   unistile bindings                    列出 Binding（含 role / stale 状态）
+  unistile install-skills              把技能铺到各 Agent Harness 的 skills 目录
   unistile tree [projection] [--node ID]  逐层导航（多投影，含 omission 统计）
   unistile where <concept_uid>         这个 Concept 出现在哪些投影下
   unistile outline <concept_uid>       文档的 section 导航图（不检索，Provider 无关）
@@ -23,9 +24,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from .app import Runtime
 from .ingest_new import AddError, add_document
+from .install import InstallError
+from .install import install as install_skills
 from .projections import children as projection_children
 from .projections import projections_of
 from .envelope import bundle_to_envelope
@@ -457,6 +461,44 @@ def cmd_turn_show(args) -> int:
 
 
 
+def cmd_install_skills(args) -> int:
+    try:
+        results = install_skills(
+            dest=Path(args.dest).expanduser() if args.dest else None,
+            all_harnesses=args.all,
+            dry_run=args.dry_run,
+        )
+    except InstallError as exc:
+        print(f"install-skills 失败：{exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps([
+            {"harness": r.harness, "target": str(r.target),
+             "installed": list(r.installed), "status": r.status, "detail": r.detail}
+            for r in results
+        ], ensure_ascii=False, indent=2))
+        return 0 if any(r.status == "installed" for r in results) else 2
+
+    failed = False
+    for r in results:
+        if r.status == "installed":
+            note = f"  （{r.detail}）" if r.detail else ""
+            print(f"  ✓ {r.harness:<12} {r.target}{note}")
+            for name in r.installed:
+                print(f"      {name}")
+        elif r.status == "failed":
+            failed = True
+            print(f"  ✗ {r.harness:<12} {r.target}  {r.detail}", file=sys.stderr)
+        else:
+            print(f"  - {r.detail}", file=sys.stderr)
+    if not any(r.status == "installed" for r in results):
+        print("没装上任何 harness。用 --all 强制铺到全部已知路径，或 --dest <目录> 指定。",
+              file=sys.stderr)
+        return 2
+    return 2 if failed else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="unistile", description="OKF Profile + 可热插拔证据后端 POC")
     ap.add_argument("--bundle", default="knowledge", help="OKF Bundle 根目录")
@@ -481,6 +523,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("ingest").set_defaults(fn=cmd_ingest)
     sub.add_parser("providers").set_defaults(fn=cmd_providers)
     sub.add_parser("bindings").set_defaults(fn=cmd_bindings)
+
+    ins = sub.add_parser("install-skills", help="把 unistile 技能装到各 Agent Harness 的 skills 目录")
+    ins.add_argument("--all", action="store_true", help="铺到全部已知路径，不管 harness 装没装")
+    ins.add_argument("--dest", help="只装到这一个目录")
+    ins.add_argument("--dry-run", action="store_true", help="只打印会写到哪里")
+    ins.add_argument("--json", action="store_true")
+    ins.set_defaults(fn=cmd_install_skills)
 
     tr = sub.add_parser("tree", help="逐层导航（多投影）")
     tr.add_argument("projection", nargs="?")

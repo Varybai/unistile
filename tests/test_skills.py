@@ -16,8 +16,11 @@ SKILLS = Path(__file__).resolve().parents[1] / "skills"
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 ALLOWED_KEYS = {"name", "description", "license", "metadata",
                 "allowed-tools", "disable-model-invocation", "version"}
-SUBCOMMANDS = {"add", "validate", "ingest", "providers", "bindings",
+SUBCOMMANDS = {"add", "validate", "ingest", "providers", "bindings", "install-skills",
                "tree", "where", "outline", "ask", "turn", "--help"}
+
+ROOT = SKILLS.parent
+AGENT_DOCS = ("AGENTS.md", "CLAUDE.md", "README.md")
 
 DIRS = sorted(d for d in SKILLS.iterdir() if d.is_dir())
 
@@ -85,3 +88,39 @@ def test_documented_subcommands_really_exist_in_the_cli(capsys):
         with pytest.raises(SystemExit) as e:
             main([sub, "--help"])
         assert e.value.code == 0, f"unistile {sub} --help 失败 —— 技能引用了不存在的子命令"
+
+
+# —— harness 自动读取的说明文件：和技能一样是公开接口，一样会漂 ——
+
+
+@pytest.mark.parametrize("name", AGENT_DOCS)
+def test_agent_doc_exists(name):
+    assert (ROOT / name).is_file(), f"{name} 不在了 —— harness 会读不到任何说明"
+
+
+def test_claude_md_imports_agents_md_instead_of_copying_it():
+    """Claude Code 不读 AGENTS.md，但正文只能有一份，不然两边各改各的。"""
+    claude = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "@AGENTS.md" in claude, "CLAUDE.md 没导入 AGENTS.md"
+
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    for heading in re.findall(r"^## (.+)$", agents, re.M):
+        assert f"## {heading}" not in claude, (
+            f"CLAUDE.md 复制了 AGENTS.md 的「{heading}」—— 应该只靠 @AGENTS.md 导入"
+        )
+
+
+@pytest.mark.parametrize("name", AGENT_DOCS)
+def test_agent_docs_only_reference_real_subcommands(name):
+    body = (ROOT / name).read_text(encoding="utf-8")
+    used = set(re.findall(r"^unistile ([a-z][a-z-]*)", body, re.M))
+    assert used, f"{name}: 一条 unistile 命令都没有？"
+    assert used <= SUBCOMMANDS, f"{name}: 引用了不存在的子命令 {sorted(used - SUBCOMMANDS)}"
+
+
+def test_agent_docs_carry_the_install_bootstrap():
+    """贴给 agent 的说明必须自带安装步骤，否则它在没装的机器上直接卡住。"""
+    for name in ("AGENTS.md", "README.md"):
+        body = (ROOT / name).read_text(encoding="utf-8")
+        assert "pip install git+https://github.com/Varybai/unistile.git" in body, f"{name}: 缺安装命令"
+        assert "unistile install-skills" in body, f"{name}: 缺 install-skills"

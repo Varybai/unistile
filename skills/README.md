@@ -7,31 +7,39 @@
 | `unistile-answer` | 在证据门禁下回答问题 | 需要从受控文档集回答，且答错有代价 |
 | `unistile-author` | 把文档纳入知识库、写/修 Concept | 新文档入库、frontmatter 报错 |
 
-两者都依赖 `unistile` 命令行在 PATH 上：
-
-```bash
-cd unistile && uv pip install -e .
-```
+两者都依赖 `unistile` 命令行在 PATH 上。
 
 ## 装到各个 harness
 
-| Harness | 位置 |
-|---|---|
-| Claude Code（用户级） | `cp -r skills/* ~/.claude/skills/` |
-| Claude Code（项目级） | `cp -r skills/* .claude/skills/` |
-| Cursor | `cp -r skills/* .cursor/skills/` |
-| Codex / 无 skill 支持的 | 见下 |
-
-一条命令装全（按需改目标目录）：
-
 ```bash
-for d in ~/.claude/skills .cursor/skills; do mkdir -p "$d" && cp -r skills/unistile-* "$d/"; done
+pip install git+https://github.com/Varybai/unistile.git
+unistile install-skills
 ```
+
+`install-skills` 只往**已经装了的** harness 写（marker 目录存在才动），
+整目录替换而不是增量合并，所以重跑一次就是升级：
+
+| Harness | 目标目录 |
+|---|---|
+| Claude Code | `~/.claude/skills/` |
+| Codex | `~/.codex/skills/` |
+| Cursor | `~/.cursor/skills/` |
+| Grok | `~/.grok/skills/`（也会读 `~/.claude/skills/`） |
+| Pi | `~/.pi/agent/skills/` |
+| OMP | `~/.omp/agent/skills/` |
+| Windsurf | `~/.windsurf/skills/` |
+
+`--dry-run` 先看会写到哪；`--all` 不管装没装全铺一遍；`--dest <目录>` 指定单个目标
+（项目级就用 `--dest .claude/skills`）。
+
+从源码 checkout 跑也可以，`install.py` 找不到打包进来的 `unistile/_skills`
+就会退回仓库根的 `skills/`。
 
 ## 没有 skill 支持的 harness
 
-SKILL.md 去掉 YAML frontmatter 就是一份普通指令文档。`AGENTS.md`（Codex 原生读）
-已经是 `unistile-answer` 的精简版；要完整的就把 SKILL.md 正文拼进 system prompt：
+SKILL.md 去掉 YAML frontmatter 就是一份普通指令文档。仓库根的 `AGENTS.md`
+（Codex 等原生读）本身就是完整说明，`CLAUDE.md` 用 `@AGENTS.md` 导入同一份正文。
+要把技能正文拼进 system prompt：
 
 ```bash
 sed '1{/^---$/,/^---$/d}' skills/unistile-answer/SKILL.md > /tmp/unistile-answer.txt
