@@ -28,7 +28,7 @@ from pathlib import Path
 
 from .app import Runtime
 from .ingest_new import AddError, add_document
-from .install import InstallError
+from .install import InstallError, bundled_skills_dir
 from .install import install as install_skills
 from .projections import children as projection_children
 from .projections import projections_of
@@ -493,7 +493,9 @@ def cmd_install_skills(args) -> int:
         else:
             print(f"  - {r.detail}", file=sys.stderr)
     if not any(r.status == "installed" for r in results):
-        print("没装上任何 harness。用 --all 强制铺到全部已知路径，或 --dest <目录> 指定。",
+        # 没铺成的 agent 需要能自己找到技能正文，否则只能卡在这里。
+        print("没装上任何 harness。用 --all 强制铺到全部已知路径，或 --dest <目录> 指定。\n"
+              f"不支持技能的 harness 直接读：{bundled_skills_dir()}",
               file=sys.stderr)
         return 2
     return 2 if failed else 0
