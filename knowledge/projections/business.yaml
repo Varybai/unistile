@@ -1,0 +1,28 @@
+# 业务视图：按项目 → 设备 → 供应商组织。
+# 这是导航结构的真相源（人/Agent 维护，进 git）；Catalog 里的 projection_nodes 是它的投影。
+projection_id: business
+title: 业务视图
+description: Alpha 项目下的设备与供应商合同
+nodes:
+  - id: alpha
+    label: Alpha 项目
+    children:
+      - id: alpha:line-2
+        label: 生产线 2
+        children:
+          - id: alpha:line-2:A-1007
+            concept: "kn:equipment:A-1007"
+            children:
+              - id: alpha:line-2:A-1007:spec
+                concept: "kn:equipment:A-1007:acceptance-spec"
+              - id: alpha:line-2:A-1007:manual
+                concept: "kn:equipment:A-1007:maintenance-manual"
+      - id: alpha:supplier-x
+        label: 供应商 X
+        children:
+          - id: alpha:supplier-x:AGR0048
+            concept: "kn:agreement:AGR0048"
+            view_metadata: {effective_from: "2026-05-01"}
+          - id: alpha:supplier-x:S02
+            concept: "kn:agreement:Supplement-02"
+            view_metadata: {effective_from: "2026-07-15"}

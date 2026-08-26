@@ -1,0 +1,98 @@
+{
+  "version": "v1",
+  "note": "整轮控制流的参考轨迹。任何驾驶者跑同一个问题，stop_reason 与此不同，只有两种可能：找到了更短的路（更新 golden），或绕过了门禁（bug）。",
+  "cases": [
+    {
+      "id": "a1",
+      "question": "A-1007 的质保期是多久？",
+      "seeds": [
+        "kn:agreement:AGR0048"
+      ],
+      "expect": {
+        "stop_reason": "all_required_obligations_supported",
+        "reads": [
+          "AGR0048#7",
+          "AGR0048#6",
+          "Supplement-02#1"
+        ],
+        "obligations": {
+          "obl-original-source": "supported",
+          "obl-amendments:kn:agreement:AGR0048": "supported"
+        }
+      },
+      "semantic_gap": "被点名的原条款 7.2（12 个月）已被 clause 元数据强制读入；修改后的新值 24 个月仍未在场 —— 驱动器按成本挑中了「1. 修改事项」而非「2. 质保期限的变更」。门禁校验来源、条数、来源数与被点名条款，不校验语义，剩下这半关不上。"
+    },
+    {
+      "id": "a2",
+      "question": "A-1007 验收要看什么？",
+      "seeds": [
+        "kn:equipment:A-1007:acceptance-spec"
+      ],
+      "expect": {
+        "stop_reason": "all_required_obligations_supported",
+        "reads": [
+          "acceptance-spec#6"
+        ],
+        "obligations": {
+          "obl-original-source": "supported"
+        }
+      },
+      "note": "没有 amends 入边 → 不派生 obl-amendments → 一次读取即可"
+    },
+    {
+      "id": "a3",
+      "question": "A-1007 的额定功率？",
+      "seeds": [
+        "kn:equipment:A-1007"
+      ],
+      "expect": {
+        "stop_reason": "abstain_blocked_obligation",
+        "reads": [],
+        "obligations": {
+          "obl-original-source": "blocked"
+        }
+      },
+      "note": "structured Concept 没有可回读原文 → 开轮即 blocked → 第一步就 abstain，不试着乱查"
+    },
+    {
+      "id": "a4",
+      "question": "A-1007 的质保期是多久？",
+      "seeds": [
+        "kn:agreement:AGR0048"
+      ],
+      "no_hop": true,
+      "expect": {
+        "stop_reason": "qualified_answer_with_gaps",
+        "reads": [
+          "AGR0048#7"
+        ],
+        "obligations": {
+          "obl-original-source": "supported",
+          "obl-amendments:kn:agreement:AGR0048": "blocked"
+        }
+      },
+      "note": "关掉关系展开后补充协议不在 scope 里，两来源门槛够不着 → 开轮即 blocked，不烧任何预算；给限制性结论并公开缺口，而不是静默按原协议回答"
+    },
+    {
+      "id": "a5",
+      "question": "A-1007 的质保期是多久？",
+      "seeds": [
+        "kn:agreement:AGR0048"
+      ],
+      "budget": {
+        "tool_calls": 1
+      },
+      "expect": {
+        "stop_reason": "budget_exhausted",
+        "reads": [
+          "AGR0048#7"
+        ],
+        "obligations": {
+          "obl-original-source": "supported",
+          "obl-amendments:kn:agreement:AGR0048": "unseen"
+        }
+      },
+      "note": "预算耗尽必须可解释：返回已确认事实与未完成 Gap，不编结论"
+    }
+  ]
+}

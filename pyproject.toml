@@ -1,0 +1,34 @@
+[project]
+name = "unistile"
+version = "0.1.0"
+description = "OKF 之上的证据门禁运行时：收紧的 Profile，加上「回答前必须核实什么」的运行时约束"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = ["pyyaml>=6.0", "firecrawl-anydoc>=0.2.3"]
+keywords = ["okf", "knowledge", "rag", "evidence", "agent", "citations"]
+classifiers = [
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Text Processing :: Indexing",
+  "Intended Audience :: Developers",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+unistile = "unistile.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Varybai/unistile"
+Issues = "https://github.com/Varybai/unistile/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["unistile"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

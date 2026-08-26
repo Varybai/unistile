@@ -1,0 +1,24 @@
+{
+  "version": "v1",
+  "note": "同一套问题跑在所有 Provider 上；换 Provider 时用它做对照评测（方案篇 C9）。",
+  "cases": [
+    {"id": "g1", "query": "质保期限", "scope": ["kn:agreement:AGR0048"],
+     "expect_concept": "kn:agreement:AGR0048", "expect_section": "7.2 质保期限"},
+    {"id": "g2", "query": "质保期是多久", "scope": ["kn:agreement:AGR0048"],
+     "expect_concept": "kn:agreement:AGR0048", "expect_section": "7.2 质保期限"},
+    {"id": "g3", "query": "补充协议修改了质保期限吗", "scope": ["kn:agreement:Supplement-02"],
+     "expect_concept": "kn:agreement:Supplement-02", "expect_section": "2. 质保期限的变更"},
+    {"id": "g4", "query": "振动限值是多少", "scope": ["kn:equipment:A-1007:acceptance-spec"],
+     "expect_concept": "kn:equipment:A-1007:acceptance-spec", "expect_section": "2.2 振动限值"},
+    {"id": "g5", "query": "额定功率要求", "scope": ["kn:equipment:A-1007:acceptance-spec"],
+     "expect_concept": "kn:equipment:A-1007:acceptance-spec", "expect_section": "2.1 额定功率"},
+    {"id": "g6", "query": "验收不合格如何处理", "scope": ["kn:equipment:A-1007:acceptance-spec"],
+     "expect_concept": "kn:equipment:A-1007:acceptance-spec", "expect_section": "4. 不合格处理"},
+    {"id": "g7", "query": "付款方式", "scope": ["kn:agreement:AGR0048"],
+     "expect_concept": "kn:agreement:AGR0048", "expect_section": "3. 价格与付款",
+     "known_limitation": "keyword-only：查询词与原文用词不同形（付款方式 vs 付款分三期），需向量检索"},
+    {"id": "g8", "query": "交付时间要求", "scope": ["kn:agreement:AGR0048"],
+     "expect_concept": "kn:agreement:AGR0048", "expect_section": "2. 交付",
+     "known_limitation": "keyword-only：交付时间 → 交付，trigram 无法跨词形匹配"}
+  ]
+}
