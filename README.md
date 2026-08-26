@@ -182,6 +182,12 @@ unistile add 你的文件.pdf \
 python -m pytest -q
 ```
 
+## 给 Agent 的一段话
+
+下面这段文字可以直接复制到任何 Agent（Codex / Claude Code / Pi / OMP / Grok 等）的对话或 system prompt 里，Agent 就能自动装好并使用 unistile：
+
+> 先运行 `pip install git+https://github.com/Varybai/unistile.git` 安装 unistile，用 `unistile --help` 确认可用。unistile 是一个证据门禁运行时：你从知识 Bundle 回答问题时，它自动派生「回答前必须核实什么」（义务），校验每条引用的来源和可回读性，义务未满足物理上不让你回答。核心工作流：`unistile ingest` 建索引 → `unistile turn start "<问题>" --concept <uid> --json` 开轮（返回 packet，含 obligations、legal_actions、manifest、budget）→ `unistile turn show <turn_id> --node <node_id> --json` 逐层导航 → `unistile turn act <turn_id> --obligation <id> --view-node <id> --json` 读原文攒证据 → 所有必需义务变 supported 后 `answer` 才出现在 `legal_actions` 里 → `unistile turn answer <turn_id> --claim "<结论>"` 回答。关键规则：`answer` 不在 `legal_actions` 里就不要调用，会被拒（退出码 3）且浪费预算；先看 `gate.stop_reason` 和未满足的义务，补齐证据再 answer。实在无法满足用 `unistile turn abstain <turn_id> --reason "<原因>"`。纳入新文档用 `unistile add <文件> --uid "kn:<namespace>:<id>" --title "<标题>" --domain <domain> --description "<说明>"`，支持 docx/pdf/xlsx/pptx/csv/md 等 17 种格式。自检：问「A-1007 的质保期是多久？」，第一次 answer 应该被拦（exit 3，补充协议没读），读完补充协议后答 24 个月才对。
+
 ## 作为 Skill 使用
 
 `skills/` 下两个技能，任何支持 Agent Skills 的 harness 都能装：
