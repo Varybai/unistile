@@ -5,9 +5,6 @@
 
 它不是检索系统，是拦截系统 —— 检索、投影、Provider 都是为门禁服务的配件。
 
-对应设计：Obsidian `uniforce/OKF 格式规范落地方案：Profile、Binding 与可热插拔证据后端`
-（以及 `Agent-native 多尺度知识体系设计：OKF + WeKnora`、`Context Graph：Agent 请求级上下文运行时设计`）。
-
 ## 与 OKF 的关系
 
 unistile 是 [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)
