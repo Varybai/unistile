@@ -12,7 +12,8 @@ import pytest
 from unistile.app import Runtime
 from unistile.evidence.routing import RouteRule, Router
 from unistile.turn import obligations as obl
-from unistile.turn.contract import BudgetLedger, TurnError
+from unistile.ingest_new import add_document
+from unistile.turn.contract import BudgetLedger, ScopeResolutionError, TurnError
 from unistile.turn.session import TurnSession
 
 AGR = "kn:agreement:AGR0048"
@@ -241,3 +242,98 @@ def test_named_clause_must_be_present(ts):
     assert "7.2 质保期限" in state.ledger.aggregate_check(o)[1]
     ts.read_view_node(state, AMEND, "AGR0048#6")          # 7.2 到场
     assert state.contract.obligation(AMEND).status == "supported"
+
+
+# ---------- 开轮之前：实体在不在库里 ----------
+# 事故来源：OMP 会话 01a03cfd 查一个库里没有的人名「马旺」。
+# 因为 turn start 必须给 --concept，而「姓名 → uid」当时在 unistile 里没有入口，
+# agent 转头直接查 runtime 的 sqlite，整轮门禁一次都没被调用。
+# 下面两条把「实体不存在时必须开不起轮」和「补上 alias 后必须开得起来」都钉住。
+
+def test_unknown_entity_cannot_open_a_turn(ts):
+    with pytest.raises(ScopeResolutionError) as e:
+        ts.start("马旺的资料是什么？")               # 不给 seeds，逼它走 resolve
+    assert e.value.query == "马旺的资料是什么？"
+    assert e.value.near_misses == []
+
+
+def test_unknown_entity_is_refused_not_a_usage_error(ts):
+    """ScopeResolutionError 必须是 TurnError 的子类（CLI 靠捕获顺序区分 exit 3 / exit 2）。"""
+    assert issubclass(ScopeResolutionError, TurnError)
+
+
+def test_uuid_titled_bundle_is_unaddressable_without_aliases(tmp_path, bundle):
+    """复刻事故 bundle：title 是 UUID、没有 aliases —— 人名碰不到任何解析层。"""
+    add_document(
+        bundle, bundle / "assets" / "documents" / "AGR0048-v3.md",
+        uid="kn:concept:64f41f68", title="HRBoost 候选人简历 64f41f68 / 300dab39",
+        domain="contracts", description="标题不可读",
+    )
+    rt = Runtime(bundle, tmp_path / "runtime")
+    rt.ingest()
+    try:
+        with pytest.raises(ScopeResolutionError):
+            TurnSession(rt).start("马德旺的教育背景是什么？")
+    finally:
+        rt.close()
+
+
+def test_alias_makes_the_same_bundle_addressable(tmp_path, bundle):
+    """同一份文档，补上 --alias 之后就能定位到 —— 证明修复路径真的通到底。
+
+    走的是文档里写的那条流程：resolve 拿 uid → turn start --concept。
+    """
+    add_document(
+        bundle, bundle / "assets" / "documents" / "AGR0048-v3.md",
+        uid="kn:concept:64f41f68", title="HRBoost 候选人简历 64f41f68 / 300dab39",
+        domain="contracts", description="标题不可读", aliases=["马德旺"],
+    )
+    rt = Runtime(bundle, tmp_path / "runtime")
+    rt.ingest()
+    try:
+        uids = [r["uid"] for r in rt.catalog.resolve("马德旺")]
+        assert uids == ["kn:concept:64f41f68"]
+
+        state = TurnSession(rt).start("马德旺的教育背景是什么？", seeds=uids)
+        assert state.contract.seed_uids == uids
+        assert "answer" not in state.ledger.legal_actions(), "开得起轮 ≠ 能直接答"
+    finally:
+        rt.close()
+
+
+def test_whole_question_does_not_resolve_but_points_at_the_right_concept(tmp_path, bundle):
+    """整句提问仍然拒绝开轮（resolve 只做身份解析，不做问句理解），
+    但候选里必须给出那个确实在库里的实体 —— 否则「没有近似候选」就是在撒谎。
+    """
+    add_document(
+        bundle, bundle / "assets" / "documents" / "AGR0048-v3.md",
+        uid="kn:concept:64f41f68", title="HRBoost 候选人简历 64f41f68 / 300dab39",
+        domain="contracts", description="标题不可读", aliases=["马德旺"],
+    )
+    rt = Runtime(bundle, tmp_path / "runtime")
+    rt.ingest()
+    try:
+        with pytest.raises(ScopeResolutionError) as e:
+            TurnSession(rt).start("马德旺的教育背景是什么？")
+        near = e.value.near_misses
+        assert [n["uid"] for n in near][:1] == ["kn:concept:64f41f68"]
+        assert near[0]["matched_value"] == "马德旺"
+    finally:
+        rt.close()
+
+
+def test_near_misses_are_offered_but_never_auto_substituted(tmp_path, bundle):
+    """查「马旺」时给出「马德旺」作候选，但轮次仍然开不起来 —— 由人来确认是不是同一个。"""
+    add_document(
+        bundle, bundle / "assets" / "documents" / "AGR0048-v3.md",
+        uid="kn:concept:64f41f68", title="HRBoost 候选人简历 64f41f68 / 300dab39",
+        domain="contracts", description="标题不可读", aliases=["马德旺"],
+    )
+    rt = Runtime(bundle, tmp_path / "runtime")
+    rt.ingest()
+    try:
+        with pytest.raises(ScopeResolutionError) as e:
+            TurnSession(rt).start("马旺")
+        assert [n["matched_value"] for n in e.value.near_misses] == ["马德旺"]
+    finally:
+        rt.close()

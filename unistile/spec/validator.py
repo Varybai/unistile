@@ -113,6 +113,18 @@ def validate_file(path: str | Path, *, bundle_root: str | Path | None = None) ->
                     )
                 )
 
+    # --- aliases 形状 ---
+    # 写成标量会被 list() 拆成单字（`aliases: 马旺` → ['马','旺']），静默进 Catalog，
+    # 然后 resolve 的 alias 那一级永远命中不了。这种失败没有任何症状，必须在这里拦。
+    if "aliases" in data:
+        al = data["aliases"]
+        if not isinstance(al, list):
+            out.append(_err("L1.aliases_shape", f"aliases 必须是列表，得到 {type(al).__name__}：{al!r}", sp))
+        else:
+            for a in al:
+                if not isinstance(a, str) or not a.strip():
+                    out.append(_err("L1.aliases_shape", f"aliases 条目必须是非空字符串：{a!r}", sp))
+
     # --- relations 类型登记 ---
     for r in data.get("relations") or []:
         if not isinstance(r, dict):

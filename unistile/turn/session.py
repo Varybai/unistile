@@ -21,7 +21,7 @@ from ..evidence.contract import EvidenceLevel, Locator, SearchBudget
 from ..evidence.errors import ProviderError, ScopeError
 from ..resources.normalizer import text_sha256
 from . import manifest as mf
-from .contract import LEVEL_ORDER, BudgetLedger, TaskContract, TurnError
+from .contract import LEVEL_ORDER, BudgetLedger, ScopeResolutionError, TaskContract, TurnError
 from .ledger import ObligationLedger
 from .obligations import derive
 
@@ -136,8 +136,10 @@ class TurnSession:
         if not seed_uids:
             seed_uids = [r["uid"] for r in self.rt.catalog.resolve(question)][:3]
         if not seed_uids:
-            raise TurnError(
-                "无法定位 Concept；请用 --concept <uid> 指定范围（不允许全库无界检索）"
+            raise ScopeResolutionError(
+                "无法定位 Concept；请用 --concept <uid> 指定范围（不允许全库无界检索）",
+                query=question,
+                near_misses=self.rt.catalog.near_matches(question),
             )
         scope = seed_uids if no_hop else self.rt.expand_scope(seed_uids)
 

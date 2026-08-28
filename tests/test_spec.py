@@ -67,6 +67,37 @@ def test_relation_metadata_must_be_mapping(tmp_path):
     assert "L1.relation_metadata" in codes
 
 
+def test_scalar_aliases_rejected(tmp_path):
+    """`aliases: 马旺` 会被 list() 拆成 ['马','旺']，静默进 Catalog 后 alias 解析永远落空。
+
+    这种失败没有任何症状 —— 只能在写入之前拦。
+    """
+    bad = BASE.replace("evidence_class: document", "evidence_class: document\naliases: 马旺")
+    codes = {f.code for f in validate_file(_write(tmp_path, bad, "alias-scalar.md"))}
+    assert "L1.aliases_shape" in codes
+
+
+@pytest.mark.parametrize("entry", ['""', "123", "null", '"   "'])
+def test_alias_entries_must_be_nonempty_strings(tmp_path, entry):
+    bad = BASE.replace("evidence_class: document", f"evidence_class: document\naliases: [{entry}]")
+    codes = {f.code for f in validate_file(_write(tmp_path, bad, "alias-entry.md"))}
+    assert "L1.aliases_shape" in codes
+
+
+def test_empty_alias_list_is_fine(tmp_path):
+    """没有别名是正常的，不是错误。"""
+    ok = BASE.replace("evidence_class: document", "evidence_class: document\naliases: []")
+    codes = {f.code for f in validate_file(_write(tmp_path, ok, "alias-empty.md"))}
+    assert "L1.aliases_shape" not in codes
+
+
+def test_valid_aliases_accepted(tmp_path):
+    ok = BASE.replace("evidence_class: document",
+                      'evidence_class: document\naliases: ["主设备采购协议", "AGR0048"]')
+    codes = {f.code for f in validate_file(_write(tmp_path, ok, "alias-ok.md"))}
+    assert "L1.aliases_shape" not in codes
+
+
 def test_unregistered_relation_rejected(tmp_path):
     bad = BASE.replace("evidence_class: document",
                        "evidence_class: document\nrelations:\n  - type: 修订\n    target: \"kn:agreement:AGR0048\"")

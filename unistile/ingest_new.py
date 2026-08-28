@@ -6,6 +6,7 @@ sha256 由工具计算，不允许手填 —— 它是更新乐观锁和 Binding
 
 from __future__ import annotations
 
+import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +52,7 @@ def add_document(
     relations: list[tuple[str, str]] | None = None,
     tags: list[str] | None = None,
     external_id: str | None = None,
+    aliases: list[str] | None = None,
 ) -> AddResult:
     root = Path(bundle_root)
     src = Path(source_file)
@@ -112,6 +114,10 @@ def add_document(
     ]
     if external_id:
         lines.append(f'external_id: "{external_id}"')
+    if aliases:
+        # 走 json.dumps 而不是手拼：别名里带引号/逗号时手拼会生成非法 YAML，
+        # 而 JSON 数组本来就是合法的 YAML flow sequence。
+        lines.append(f"aliases: {json.dumps(list(aliases), ensure_ascii=False)}")
     lines += [
         f'sha256: "{sha}"',
         f"resource_revision: {revision}",

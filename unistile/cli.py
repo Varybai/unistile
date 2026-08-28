@@ -5,6 +5,7 @@
   unistile ingest                      校验 → 归一化 → Catalog → Provider bind
   unistile providers                   列出已注册 Provider 及其能力声明
   unistile bindings                    列出 Binding（含 role / stale 状态）
+  unistile resolve "<姓名/别名>"        身份解析 → uid；库里没有这个实体则 exit 3
   unistile install-skills              把技能铺到各 Agent Harness 的 skills 目录
   unistile tree [projection] [--node ID]  逐层导航（多投影，含 omission 统计）
   unistile where <concept_uid>         这个 Concept 出现在哪些投影下
@@ -36,7 +37,7 @@ from .envelope import bundle_to_envelope
 from .evidence.contract import SearchBudget
 from .evidence.errors import ProviderError
 from .spec.validator import validate_bundle
-from .turn.contract import BudgetLedger, TurnError
+from .turn.contract import BudgetLedger, ScopeResolutionError, TurnError
 from .turn.driver import run as auto_run
 from .turn.manifest import ManifestError
 from .turn.session import TurnSession
@@ -59,6 +60,7 @@ def cmd_add(args) -> int:
             args.bundle, args.file, uid=args.uid, title=args.title, domain=args.domain,
             concept_type=args.type, description=args.description, revision=args.revision,
             relations=rels, tags=args.tag or [], external_id=args.external_id,
+            aliases=args.alias or [],
         )
     except AddError as e:
         print(e, file=sys.stderr)
@@ -73,6 +75,56 @@ def cmd_add(args) -> int:
     rep = rt.ingest()
     rt.close()
     print(f"\ningest: concepts={rep.concepts}  bound={rep.bound}")
+    return 0
+
+
+def _print_unresolved(query: str, near: list, *, as_json: bool) -> int:
+    """身份解析失败的统一出口。exit 3 —— 这是拒答，不是用法错误。
+
+    `near_misses` 是 Catalog 身份字段上的字符相似度候选，给人确认用；
+    调用方不许拿它自动改写查询，那等于把「查错人」变成静默的事实错误。
+    """
+    if as_json:
+        print(json.dumps({
+            "query": query,
+            "resolved": [],
+            "near_misses": near,
+            "stop_reason": "entity_not_in_catalog",
+        }, ensure_ascii=False, indent=2))
+        return 3
+    print(f"无法定位 Concept：{query!r}（不允许全库无界检索）", file=sys.stderr)
+    if near:
+        print("\n近似候选（字符相似度，非语义匹配 —— 请人工确认是不是同一个）：", file=sys.stderr)
+        for n in near:
+            print(f"  {n['uid']}\n    {n['matched_on']}={n['matched_value']!r}  ratio={n['ratio']}",
+                  file=sys.stderr)
+    else:
+        print("没有近似候选。这个实体大概率不在库里。", file=sys.stderr)
+    return 3
+
+
+def cmd_resolve(args) -> int:
+    """姓名/别名 → uid。给 Agent 一个正式入口，替代直接翻 runtime 下的 sqlite。"""
+    rt = _rt(args)
+    rows = rt.catalog.resolve(args.query, limit=args.limit)
+    if not rows:
+        near = rt.catalog.near_matches(args.query, limit=args.limit)
+        rt.close()
+        return _print_unresolved(args.query, near, as_json=args.json)
+
+    resolved = [
+        {"uid": r["uid"], "title": r["title"], "status": r["status"],
+         "evidence_class": r["evidence_class"], "domain": r["domain"]}
+        for r in rows
+    ]
+    rt.close()
+    if args.json:
+        print(json.dumps({"query": args.query, "resolved": resolved, "near_misses": []},
+                         ensure_ascii=False, indent=2))
+        return 0
+    for r in resolved:
+        print(f"{r['uid']}\n  {r['title']}   [{r['status']} / {r['evidence_class']}]")
+    print(f"\n{len(resolved)} 个。用 `turn start \"<问题>\" --concept <uid>` 开轮。")
     return 0
 
 
@@ -236,8 +288,9 @@ def cmd_ask(args) -> int:
         rows = rt.catalog.resolve(args.query)
         seeds = [r["uid"] for r in rows][:3]
     if not seeds:
-        print("无法定位 Concept；请用 --concept <uid> 指定范围（不允许全库无界检索）", file=sys.stderr)
-        return 2
+        near = rt.catalog.near_matches(args.query)
+        rt.close()
+        return _print_unresolved(args.query, near, as_json=args.json)
 
     scope = seeds if args.no_hop else rt.expand_scope(seeds)
     hopped = [u for u in scope if u not in seeds]
@@ -333,6 +386,10 @@ def cmd_turn_start(args) -> int:
             budget=budget,
             allow_qualified_answer=not args.strict_answer,
         )
+    except ScopeResolutionError as e:
+        # 实体不在库里 —— 拒答（3），不是参数写错（2）。轮次根本没建起来，所以没有 packet。
+        rt.close()
+        return _print_unresolved(e.query, e.near_misses, as_json=args.json)
     except TurnError as e:
         print(str(e), file=sys.stderr)
         rt.close()
@@ -518,6 +575,9 @@ def main(argv: list[str] | None = None) -> int:
     ad.add_argument("--relation", action="append", help="<type>:<target_uid>，可重复")
     ad.add_argument("--tag", action="append")
     ad.add_argument("--external-id", dest="external_id")
+    ad.add_argument("--alias", action="append",
+                    help="别名，可重复。title 是 UUID 之类不可读的串时必须给，"
+                         "否则这份文档在 resolve/门禁里寻址不到")
     ad.add_argument("--no-ingest", action="store_true")
     ad.set_defaults(fn=cmd_add)
 
@@ -525,6 +585,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("ingest").set_defaults(fn=cmd_ingest)
     sub.add_parser("providers").set_defaults(fn=cmd_providers)
     sub.add_parser("bindings").set_defaults(fn=cmd_bindings)
+
+    rs = sub.add_parser("resolve", help="姓名/别名/external_id → uid；定位不到 exit 3")
+    rs.add_argument("query")
+    rs.add_argument("--limit", type=int, default=10)
+    rs.add_argument("--json", action="store_true")
+    rs.set_defaults(fn=cmd_resolve)
 
     ins = sub.add_parser("install-skills", help="把 unistile 技能装到各 Agent Harness 的 skills 目录")
     ins.add_argument("--all", action="store_true", help="铺到全部已知路径，不管 harness 装没装")

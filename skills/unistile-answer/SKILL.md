@@ -33,6 +33,7 @@ unistile ingest
 ## 一轮的流程
 
 ```bash
+unistile resolve "<实体名>" --json                     # 姓名/别名 → uid；库里没有则 exit 3
 unistile turn start "<用户的问题>" --concept <uid> --json
 unistile turn show <turn_id> --node <view_node_id> --json
 unistile turn act  <turn_id> --obligation <id> --view-node <view_node_id> --json
@@ -40,18 +41,27 @@ unistile turn answer <turn_id> --claim "<你的结论>"
 unistile turn abstain <turn_id> --reason "<为什么答不了>"
 ```
 
-不知道 `--concept` 填什么就先找：
+不知道 `--concept` 填什么：
 
 ```bash
+unistile resolve "马德旺" --json   # 身份解析：uid > external_id > alias > 标题子串
 unistile tree                      # 逐层导航
 unistile where <uid>               # 这个 Concept 在哪些视图下
 ```
 
-`--concept` 省略时 Runtime 会按标题/别名解析；解析不到会直接报错，
+`resolve` 找不到就是 **exit 3**（`stop_reason: entity_not_in_catalog`）——
+这个实体不在库里，**到此为止，不要换个工具接着找**。
+它会附带 `near_misses`（字符相似度候选，不是语义匹配）：拿去问用户是不是这一个，
+**不要自己替换掉再查**——查错人比查不到更糟。
+
+`--concept` 省略时 Runtime 会拿整个问句去解析；解析不到同样 exit 3，
 **不会退化成全库无界检索**。
 
-## 五条规则
+## 六条规则
 
+0. **不许绕过 CLI 取证据。** 不要读 `runtime/` 下的 sqlite、`text.txt` 或任何派生文件，
+   也不要直接 grep 原始文档。身份解析走 `unistile resolve`，证据走 `unistile turn act`。
+   直接查库拿到的东西不会推进任何义务——门禁照样拦你，而你已经把预算花完了。
 1. **`answer` 不在 `legal_actions` 里就别调。** 会被拒（exit 3），白花一次。
    先看 `gate.stop_reason` 和还没 `supported` 的义务。
 2. **义务删不掉也改不了。** 它由 Runtime 从 Catalog 事实派生——有 `amends` 入边就必须

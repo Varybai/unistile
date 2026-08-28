@@ -28,6 +28,7 @@ unistile add <文件路径> \
   --title "<人读得懂的标题>" \
   --domain <domain> \
   --description "<一句话，会进 index.md 的条目>" \
+  --alias "<人读得懂的名字>" \           # 可重复
   --relation "<type>:<target_uid>"        # 可重复
 ```
 
@@ -36,6 +37,22 @@ unistile add <文件路径> \
 
 支持 17 种后缀：`.md .markdown .txt` 直接进；
 `.docx .doc .docm .pptx .ppt .xlsx .xls .odt .ods .odp .rtf .epub .csv .pdf` 经 anydoc 转 GFM。
+
+## title 不可读时，必须给 --alias
+
+`title` 是 UUID、编号或文件名这类人读不懂的串时，**必须补 `--alias`**，否则这份文档
+在 `unistile resolve` 里按名字永远找不到——身份解析只看 Catalog 的
+`uid / external_id / aliases / title`，不看正文。
+
+```bash
+unistile add 简历.pdf --uid "kn:concept:64f41f68" \
+  --title "HRBoost 候选人简历 64f41f68 / 300dab39" \
+  --domain resumes --alias "马德旺" --alias "Ma Dewang"
+```
+
+姓名从文档里抽取是语义判断，**Runtime 不做**——由你在入库时声明。
+`aliases` 必须是非空字符串的列表；写成标量（`aliases: 马德旺`）会被
+`L1.aliases_shape` 拒绝，因为它会被拆成单字。
 
 ## uid 语法
 

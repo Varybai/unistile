@@ -155,6 +155,7 @@ unistile Bundle  →  合法 OKF     ✓
 | `unistile validate` | L0/L1/L2 + 值级往返校验；未通过不允许进 Catalog |
 | `unistile ingest` | 校验 → 归一化文本平面 → Catalog → Provider bind → 重建 index.md 与投影 |
 | `unistile install-skills` | 把技能铺到本机各 harness 的 skills 目录 |
+| `unistile resolve "<名字>"` | 身份解析 → uid；**库里没有这个实体则 exit 3**，附确定性近似候选 |
 | `unistile tree [投影] [--node ID]` | 逐层导航，含 omission 统计 |
 | `unistile where <uid>` | 这个 Concept 出现在哪些投影下 |
 | `unistile outline <uid>` | 文档的 section 导航图（不检索，Provider 无关） |
@@ -165,6 +166,10 @@ unistile Bundle  →  合法 OKF     ✓
 
 `ask` 默认沿已登记的 `amends`/`supersedes` 关系有界展开，`--no-hop` 关闭 ——
 对比这两种输出就能看到 12 个月和 24 个月的差别。
+
+身份解析只看 Catalog 的 `uid / external_id / aliases / title`，**不碰正文**。
+所以 `title` 不可读（UUID、编号）的文档必须在入库时给 `--alias`，否则按名字永远找不到——
+这不是检索质量问题，是寻址问题。
 
 `turn` 各字段的含义见 [`AGENTS.md`](AGENTS.md) 与 `skills/unistile-answer/reference/packet.md`。
 

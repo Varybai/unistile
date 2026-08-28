@@ -50,6 +50,7 @@ capability.insufficient       Provider 天花板低于任务要求，查一万�
 | `required_obligation_unsupported` | 还没查够 |
 | `abstain_blocked_obligation` | 关键义务走死，只能拒答 |
 | `budget_exhausted` | 预算耗尽，返回已确认事实和缺口，不编 |
+| `entity_not_in_catalog` | **轮次没开起来**：问的实体不在 Catalog 里。这不是 packet，是 `resolve` / `turn start` 的拒绝出口，形如 `{query, resolved: [], near_misses, stop_reason}` |
 
 ## manifest
 
@@ -80,3 +81,33 @@ capability.insufficient       Provider 天花板低于任务要求，查一万�
 
 `tokens_available` 已经扣掉 `reserved`（verify + answer 预留）。
 检索花不到那部分，所以门禁开的时候一定还有 token 可以输出。
+
+## 身份解析（开轮之前）
+
+```bash
+unistile resolve "马德旺" --json
+```
+
+```json
+{"query": "马德旺",
+ "resolved": [{"uid": "kn:concept:64f41f68", "title": "…", "status": "stable",
+               "evidence_class": "document", "domain": "resumes"}],
+ "near_misses": []}
+```
+
+命中 exit 0；落空 **exit 3**，`resolved` 为空、`stop_reason` 为 `entity_not_in_catalog`，
+`near_misses` 给出候选：
+
+| 字段 | 含义 |
+|---|---|
+| `uid` / `title` | 候选是谁 |
+| `matched_on` | 命中的身份字段：`title` / `alias` / `external_id` / `uid` |
+| `matched_value` | 具体命中的那个串 |
+| `ratio` | 字符相似度（`difflib`）。**不是语义相似度**，身份串整个出现在查询里记 1.0 |
+
+`near_misses` 是给人确认的，不是给你自动改写查询的。
+「马旺」和「马德旺」差一个字，可能是笔误，也可能是两个人——这个判断不归你做。
+
+解析只看 Catalog 的身份字段（title / aliases / external_id / uid），**不碰文本平面**。
+所以 `title` 是 UUID 且没写 `aliases` 的 Concept，按姓名永远找不到——那是入库时的缺陷，
+用 `unistile add --alias` 修，不要转头去 grep 原文。

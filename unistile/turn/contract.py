@@ -34,6 +34,8 @@ StopReason = Literal[
     "abstain_blocked_obligation",
     "budget_exhausted",
     "no_legal_action",
+    # 轮次开不起来：问的实体在 Catalog 里根本不存在。开轮前的拒答，没有 ledger。
+    "entity_not_in_catalog",
 ]
 
 LEVEL_ORDER: dict[EvidenceLevel, int] = {
@@ -45,6 +47,20 @@ LEVEL_ORDER: dict[EvidenceLevel, int] = {
 
 class TurnError(RuntimeError):
     """轮次层错误：门禁拒绝、预算耗尽、非法动作。"""
+
+
+class ScopeResolutionError(TurnError):
+    """开轮前就定位不到 Concept —— 问的实体不在 Catalog 里。
+
+    和别的 TurnError 分开，因为语义完全不同：那些是「你参数写错了」（exit 2），
+    这个是「这个东西库里没有，所以不许往下走」（exit 3），属于拒答的一种。
+    `near_misses` 是 Catalog 身份字段上的确定性近似候选，供人确认，不是自动改写。
+    """
+
+    def __init__(self, message: str, *, query: str, near_misses: list | None = None):
+        super().__init__(message)
+        self.query = query
+        self.near_misses = near_misses or []
 
 
 @dataclass

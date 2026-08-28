@@ -17,7 +17,7 @@ NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 ALLOWED_KEYS = {"name", "description", "license", "metadata",
                 "allowed-tools", "disable-model-invocation", "version"}
 SUBCOMMANDS = {"add", "validate", "ingest", "providers", "bindings", "install-skills",
-               "tree", "where", "outline", "ask", "turn", "--help"}
+               "resolve", "tree", "where", "outline", "ask", "turn", "--help"}
 
 ROOT = SKILLS.parent
 AGENT_DOCS = ("AGENTS.md", "CLAUDE.md", "README.md")
@@ -124,3 +124,29 @@ def test_agent_docs_carry_the_install_bootstrap():
         body = (ROOT / name).read_text(encoding="utf-8")
         assert "pip install git+https://github.com/Varybai/unistile.git" in body, f"{name}: 缺安装命令"
         assert "unistile install-skills" in body, f"{name}: 缺 install-skills"
+
+
+# —— 反绕过：agent 唯一能溜过门禁的路子就是直接查 runtime 下的库 ——
+
+
+@pytest.mark.parametrize("path", ["AGENTS.md", "skills/unistile-answer/SKILL.md"])
+def test_bypassing_the_cli_is_explicitly_forbidden(path):
+    """OMP 会话 01a03cfd 里 agent 直接查 runtime 的 sqlite 拿证据，整轮门禁没被调用。
+
+    当时的文档一个字都没禁止这件事。这条规则丢了，事故就会原样重演。
+    """
+    body = (ROOT / path).read_text(encoding="utf-8")
+    assert "runtime/" in body and "sqlite" in body, f"{path}: 没有禁止直接读 runtime 派生库"
+    assert "unistile resolve" in body, f"{path}: 没给出替代入口 unistile resolve"
+
+
+@pytest.mark.parametrize("path", ["AGENTS.md", "skills/unistile-answer/reference/packet.md"])
+def test_entity_not_in_catalog_is_documented(path):
+    body = (ROOT / path).read_text(encoding="utf-8")
+    assert "entity_not_in_catalog" in body, f"{path}: 没写这个拒答出口，agent 不知道 exit 3 是什么意思"
+
+
+def test_author_skill_documents_the_alias_flag():
+    """title 是 UUID 时不给 alias，文档就是不可寻址的 —— 入库端必须说清楚。"""
+    body = (ROOT / "skills/unistile-author/SKILL.md").read_text(encoding="utf-8")
+    assert "--alias" in body

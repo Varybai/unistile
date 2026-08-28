@@ -16,6 +16,7 @@ unistile install-skills          # 把技能铺到本机各 harness 的 skills �
 
 ```bash
 unistile ingest                                                        # 建索引（Bundle 变了才要）
+unistile resolve "<实体名>" --json                                     # 姓名/别名 → uid；库里没有则 exit 3
 unistile turn start "<用户的问题>" --concept <uid> --json               # 开轮，拿 packet
 unistile turn show  <turn_id> --node <view_node_id> --json             # 展开一层导航
 unistile turn act   <turn_id> --obligation <id> --view-node <id> --json # 读一段原文
@@ -38,8 +39,11 @@ unistile turn abstain <turn_id> --reason "<为什么答不了>"
 | `manifest.omission_summary` | 没列全，用 `--cursor` 翻页 |
 | `budget` | 还剩几次调用、几次读、多少 token |
 
-## 五条硬规则
+## 六条硬规则
 
+0. **不许绕过 CLI 取证据。** 不要读 `runtime/` 下的 sqlite、`text.txt` 或任何派生文件，
+   也不要直接 grep 原始文档。身份解析走 `unistile resolve`，证据走 `unistile turn act`。
+   直接查库拿到的东西不推进任何义务——门禁照样拦你，预算却已经花掉了。
 1. **`answer` 不在 `legal_actions` 里就别调**——必被拒（exit 3），白花一次预算。
    先看 `gate.stop_reason` 和还没 `supported` 的义务。
 2. **义务删不掉也改不了。** 唯一的推进方式是读到合格证据。
@@ -64,7 +68,7 @@ manifest 只有 concept 节点         → 先 show --node <它> 展开一层
 |---|---|---|
 | 0 | 成功 | 继续 |
 | 2 | 用法错误（未知 turn_id / 义务 / view_node，或预算不足） | 读 stderr，改参数重试 |
-| 3 | 门禁拒绝或 abstain | **不要重试 answer**，先补证据 |
+| 3 | 门禁拒绝、abstain，或 `entity_not_in_catalog` | **不要重试 answer**，先补证据；实体不在库里就是到此为止，别换个工具接着找 |
 
 ## 回答的时候
 
@@ -78,8 +82,12 @@ manifest 只有 concept 节点         → 先 show --node <它> 展开一层
 
 ```bash
 unistile add <文件> --uid "kn:<namespace>:<local_id>" --title "<标题>" \
-  --domain <domain> --description "<一句话>" --relation "<type>:<target_uid>"
+  --domain <domain> --description "<一句话>" --alias "<人读得懂的名字>" \
+  --relation "<type>:<target_uid>"
 ```
+
+`title` 是 UUID / 编号这类人读不懂的串时**必须给 `--alias`**，否则这份文档
+在 `resolve` 里按名字永远找不到（身份解析只看 Catalog 字段，不看正文）。
 
 支持 17 种后缀（docx/pdf/xlsx/pptx/odf/rtf/epub/csv/md/txt…）。校验不过会自动回滚。
 frontmatter 报错、uid 语法、六种关系类型：见 `unistile-author` 技能。
@@ -89,3 +97,6 @@ frontmatter 报错、uid 语法、六种关系类型：见 `unistile-author` 技
 问「A-1007 的质保期是多久？」。**第一次 answer 应该被拦住**——读到原协议写 12 个月
 就想答，门禁以 `obl-amendments` 未满足拒绝（exit 3）；读完补充协议才答出 24 个月。
 直接答 12 个月说明这份说明没生效。
+
+再问一个库里不存在的实体（例如某个没入库的人名）。**应该 exit 3
+`entity_not_in_catalog`**，而不是转头去 grep 文件或查 sqlite 把它"找出来"。

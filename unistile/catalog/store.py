@@ -6,10 +6,44 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Iterable, Sequence
 
 from ..spec import profile_v1 as profile
+
+
+MAX_WINDOW_QUERY = 200      # 超过这个长度就不滑窗了：那不是在问某个实体，是在贴文章
+
+
+def _similarity(query: str, value: str) -> float:
+    """query 和某个身份串的相似度。确定性字符比对，不是语义相似度。
+
+    三档，取最大：
+      1. `value` 整个出现在 query 里         → 1.0（「马德旺的教育背景是什么？」）
+      2. 在 query 上滑一个 len(value) 的窗   → 名字写错一个字又裹在问句里（「马旺的资料是什么？」）
+      3. 整串比对                            → query 本身就是个身份串时
+
+    没有第 2 档的话，整句提问 vs 短别名的比值会被问句长度稀释到阈值以下
+    （「马旺的资料是什么？」vs「马德旺」只有 0.33），于是一个明明在库里的人
+    会被报成「没有近似候选」—— 比不给候选更糟，那是在撒谎。
+    """
+    if not value:
+        return 0.0
+    if len(value) >= 2 and value in query:
+        return 1.0
+
+    best = SequenceMatcher(None, query, value).ratio()
+    span = len(value)
+    if 2 <= span < len(query) <= MAX_WINDOW_QUERY:
+        for i in range(len(query) - span + 1):
+            best = max(best, SequenceMatcher(None, query[i:i + span], value).ratio())
+    return best
+
+
+def _like_escape(value: str) -> str:
+    """转义 LIKE 的元字符。反斜杠必须先转，否则会把后面转出来的斜杠再转一遍。"""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 @dataclass(frozen=True)
@@ -99,15 +133,69 @@ class CatalogStore:
         rows = self.db.execute("SELECT * FROM concepts WHERE external_id=?", (query,)).fetchall()
         if rows:
             return rows
+        # query 里的 % 和 _ 必须转义：不转义时 resolve("50%") 会匹配全表，
+        # 正好是这个方法声称禁止的「全库无界检索」。
+        esc = _like_escape(query)
+        # needle 必须按存进去时的同一种方式编码（upsert_concept 用 ensure_ascii=False），
+        # 否则别名里带引号的条目永远匹配不上。json.dumps 顺便带上了定界引号，
+        # 所以这仍然是「整条别名相等」而不是子串命中。
+        alias_needle = _like_escape(json.dumps(query, ensure_ascii=False))
         rows = self.db.execute(
-            "SELECT * FROM concepts WHERE aliases_json LIKE ? LIMIT ?", (f'%"{query}"%', limit)
+            r"SELECT * FROM concepts WHERE aliases_json LIKE ? ESCAPE '\' LIMIT ?",
+            (f"%{alias_needle}%", limit),
         ).fetchall()
         if rows:
             return rows
         return self.db.execute(
-            "SELECT * FROM concepts WHERE title LIKE ? OR uid LIKE ? LIMIT ?",
-            (f"%{query}%", f"%{query}%", limit),
+            r"SELECT * FROM concepts WHERE title LIKE ? ESCAPE '\' OR uid LIKE ? ESCAPE '\' LIMIT ?",
+            (f"%{esc}%", f"%{esc}%", limit),
         ).fetchall()
+
+    def near_matches(
+        self, query: str, *, limit: int = 5, threshold: float = 0.6
+    ) -> list[dict[str, object]]:
+        """resolve() 落空时的确定性近似候选。
+
+        只比对 Catalog 的身份字段（title / aliases / external_id / uid），**不碰文本平面**——
+        在这里搜正文等于把无界检索从后门放回来，那是 Provider 在 scope 内该做的事。
+
+        用 difflib 的字符序列相似度，不是语义相似度：同样的库同样的输入永远同样的输出。
+        """
+        query = (query or "").strip()
+        if not query:
+            return []
+
+        scored: list[tuple[float, str, dict[str, object]]] = []
+        for row in self.db.execute("SELECT * FROM concepts").fetchall():
+            candidates: list[tuple[str, str]] = [("title", row["title"]), ("uid", row["uid"])]
+            if row["external_id"]:
+                candidates.append(("external_id", row["external_id"]))
+            for alias in json.loads(row["aliases_json"] or "[]"):
+                candidates.append(("alias", alias))
+
+            best_ratio, best_field, best_value = 0.0, "", ""
+            for field_name, value in candidates:
+                if not value:
+                    continue
+                value = str(value)
+                ratio = _similarity(query, value)
+                if ratio > best_ratio:
+                    best_ratio, best_field, best_value = ratio, field_name, value
+
+            if best_ratio >= threshold:
+                scored.append(
+                    (best_ratio, row["uid"], {
+                        "uid": row["uid"],
+                        "title": row["title"],
+                        "matched_on": best_field,
+                        "matched_value": best_value,
+                        "ratio": round(best_ratio, 4),
+                    })
+                )
+
+        # (相似度降序, uid 升序) —— uid 是主键，所以排序完全确定，不依赖行序。
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return [payload for _, _, payload in scored[:limit]]
 
     def edges_from(self, uid: str, relation_types: Sequence[str] | None = None) -> list[sqlite3.Row]:
         if relation_types:
