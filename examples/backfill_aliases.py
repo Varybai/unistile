@@ -43,15 +43,37 @@ RESOURCE_LINE = re.compile(r'^resource:\s*"?([^"\n]+)"?', re.M)
 # 简历里长得像名字的小标题。不排掉的话「个人信息」「教育经历」会被当成人名写进 aliases，
 # 而错误的别名比缺失的别名危险得多——它会把查询静默地指到错的人身上。
 SECTION_WORDS = {
-    "个人信息", "基本信息", "个人简介", "个人优势", "自我评价", "求职意向", "期望职位",
-    "教育经历", "教育背景", "工作经历", "工作经验", "项目经历", "项目经验", "实习经历",
-    "专业技能", "技能特长", "技能清单", "荣誉奖项", "获奖情况", "证书", "简历", "履历",
-    "联系方式", "语言能力", "培训经历", "社会实践", "兴趣爱好", "附件", "备注",
+    "个人信息", "基本信息", "个人简介", "个人简历", "个人优势", "个人总结", "个人评价",
+    "自我评价", "自我介绍", "求职意向", "期望职位", "应聘岗位", "意向岗位",
+    "教育经历", "教育背景", "学习经历", "工作经历", "工作经验", "工作履历", "职业经历",
+    "项目经历", "项目经验", "项目背景", "实习经历", "实习经验", "科研经历", "研究方向",
+    "专业技能", "技能特长", "技能清单", "专业能力", "核心技能", "技术栈",
+    "荣誉奖项", "获奖情况", "所获荣誉", "证书", "简历", "履历", "附件", "备注", "其他",
+    "联系方式", "语言能力", "培训经历", "社会实践", "兴趣爱好", "校园经历", "在校经历",
+    "招聘专用", "工作年限", "现住城市", "期望月薪", "期望薪资", "毕业院校", "所在城市",
+    # 人口学字段与表格列名：长得像名字，但一个都不是
+    "性别", "年龄", "民族", "汉族", "籍贯", "生日", "出生", "婚否", "政治面貌", "党员",
+    "电话", "手机", "邮箱", "邮件", "微信", "地址", "学历", "学位", "专业", "院校",
+    "时间", "学校", "单位", "职位", "岗位", "公司", "部门", "城市", "描述", "名称",
+    "项目", "技能", "语言", "等级", "内容", "工作内容", "项目描述", "起止时间",
+    "姓名", "名字", "电子邮箱", "出生日期", "联系电话", "院校名称", "获得时间",
+    "本科", "硕士", "博士", "在读", "应届", "至今", "统招", "统招本科", "全日制",
+    "求职简历", "现在住址", "简简历历", "现居城市", "目前城市", "工作地点",
 }
+
+# 机构名 / 地名的常见收尾字。名字不会这么结尾，而「数学学院」「安徽合肥」会。
+PLACE_SUFFIX = ("学院", "大学", "学校", "公司", "集团", "研究院", "研究所",
+                "省", "市", "县", "区", "州")
+
+# 手机号或邮箱 —— 一行里出现它，这行才可能是身份信息栏
+CONTACT = re.compile(r"1[3-9]\d[\s-]?\d{4}[\s-]?\d{4}|[\w.+-]+@[\w-]+\.[\w.]+")
+
+# 加粗/下划线标记会挡在标签和名字中间：`**姓 名：** 谌鑫`
+MARKUP = re.compile(r"(\*\*|__|</?u>|<[^>]{1,20}>)")
 
 
 def _looks_like_name(s: str) -> bool:
-    if s in SECTION_WORDS:
+    if s in SECTION_WORDS or s.endswith(PLACE_SUFFIX):
         return False
     return bool(CJK_NAME.match(s) or LATIN_NAME.match(s))
 
@@ -59,30 +81,54 @@ def _looks_like_name(s: str) -> bool:
 def candidate_names(text: str, *, head_chars: int = 500) -> list[str]:
     """从正文开头提名字候选。只看开头——姓名几乎总在最前面，往后翻只会引入噪声。
 
-    三种形状（按可信度排序）：
-      1. `姓名：崔琰`             有标签，最可信
-      2. `# 崔琰_AI 算法工程师`   H1 标题，取第一个分隔段
-      3. `# 赵先生`               H1 就是名字本身
+    四种形状（按可信度排序）：
+      1. `姓名：崔琰` / `**姓 名：** 谌鑫`   有标签，最可信
+      2. `# 崔琰_AI 算法工程师`              H1 标题，取第一个分隔段
+      3. `# 赵先生`                          H1 就是名字本身
+      4. `|卢煜航 FDE工程师|…|`              表格首格（简历常被 anydoc 转成表）
+
+    抽不出来的大多是 anydoc 对嵌字体 PDF 的乱码输出（`### ���`），
+    那是抽取质量问题，不该在这里靠猜去补。
     """
-    head = text[:head_chars]
+    head = MARKUP.sub(" ", text[:head_chars])
     found: list[str] = []
 
     def add(name: str) -> None:
-        name = name.strip()
+        name = name.strip(" \t*_|")
         if name and _looks_like_name(name) and name not in found:
             found.append(name)
 
     for m in LABELLED_NAME.finditer(head):
         add(m.group(1))
 
-    for line in head.splitlines()[:10]:
-        line = line.strip()
+    lines = [ln.strip() for ln in head.splitlines()[:12]]
+    for i, line in enumerate(lines):
         # 只认 H1。H2/H3 是「个人优势」「教育经历」这类小节标题，不是名字。
-        if not line.startswith("# "):
+        if line.startswith("# "):
+            heading = line[2:].strip()
+            add(heading)                                  # 整个标题就是名字
+            add(re.split(r"[_\-|/，,]", heading)[0])       # 名字_职位_年限
             continue
-        heading = line[2:].strip()
-        add(heading)                                  # 整个标题就是名字
-        add(re.split(r"[_\-|/，,]", heading)[0])       # 名字_职位_年限
+
+        if not (line.startswith("|") and set(line) - set("|- \t")):
+            continue
+        # 表头行（下一行是 |---|---|）装的是列名：时间 / 学校 / 单位 / 职位。
+        # 靠结构认出来，比靠词表穷举可靠。
+        if i + 1 < len(lines) and set(lines[i + 1]) <= set("|-: \t") and "|" in lines[i + 1]:
+            continue
+        # 表格里 2-4 字的中文词遍地都是（学位、院校、城市、动词），光靠形状必然误判。
+        # 要求这一行带电话或邮箱：那才是身份信息栏，不是学历栏或经历栏。
+        if not CONTACT.search(line):
+            continue
+        # 只取这一行里第一个像名字的词——简历的身份栏总是名字打头。
+        for cell in line.split("|"):
+            cell = cell.strip()
+            if not cell:
+                continue
+            token = cell.split()[0].strip(" \t*_")
+            if _looks_like_name(token):
+                add(token)
+                break
 
     return found
 
